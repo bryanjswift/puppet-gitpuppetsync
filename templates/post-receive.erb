@@ -24,4 +24,8 @@ do
     --deploy "$DEPLOY" \
     $DELETE
 
+  find $DEPLOY -type f | grep -v '.git' | xargs chmod 744
+
+  find $DEPLOY -type d | grep -v '.git' | xargs chmod 755
+
 done
