@@ -24,10 +24,10 @@ do
     --deploy "$DEPLOY" \
     $DELETE
 
+  cd $DEPLOY/$BRANCH && librarian-puppet clean && librarian-puppet install
+
   find $DEPLOY -type f | grep -v '.git' | xargs chmod 744
 
   find $DEPLOY -type d | grep -v '.git' | xargs chmod 755
-
-  cd $DEPLOY/$BRANCH && librarian-puppet clean && librarian-puppet install
 
 done
