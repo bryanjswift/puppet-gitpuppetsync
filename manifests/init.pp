@@ -19,7 +19,9 @@
 #
 # Copyright 2012 Bryan J Swift
 #
-class gitpuppetsync {
+class gitpuppetsync(
+  $ruby_version = "1.9.1",
+) {
 
   include gitpuppetsync::install
 
