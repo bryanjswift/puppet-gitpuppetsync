@@ -14,7 +14,7 @@ class gitpuppetsync::librarian {
   }
 
   exec { "Install librarian-puppet":
-    command => "gem install librarian-puppet",
+    command => "gem install librarian-puppet --no-ri --no-rdoc",
     creates => "/usr/local/bin/librarian-puppet",
     path    => ["/usr/local/bin", "/usr/bin", "/bin"],
     require => [Package["ruby-dev"]],
