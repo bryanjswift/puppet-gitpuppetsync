@@ -1,0 +1,8 @@
+name    'bryanjswift-gitpuppetsync'
+version '0.0.1'
+source 'git://github.com/bryanjswift/puppet-gitpuppetsync.git'
+author 'bryanjswift'
+license 'Apache License, Version 2.0'
+summary 'Install puppet-sync and make it possible put in post-receive hooks'
+description 'Install puppet-sync and make it possible put in post-receive hooks'
+project_page 'http://github.com/bryanjswift/puppet-gitpuppetsync'

@@ -1,0 +1,221 @@
+#!/usr/bin/env ruby
+#
+# Copyright 2011, Reid Vandewiele <marut@cat.pdx.edu>
+#
+# Credits:
+#
+#   Stefan Schlesinger: We forked his project
+#   https://github.com/sts/puppet-sync
+#
+#   Adrien Thebo: His post instigated the motivation to redo our setup in ruby
+#   http://puppetlabs.com/blog/git-workflow-and-puppet-environments
+#
+#   Hunter Haugen: The first guy to blog about dynamic branch -> environment
+#   http://hunnur.com/blog/2010/10/dynamic-git-branch-puppet-environments/
+#
+# Puppet Sync
+#
+# This script may be used to sync a git branch from your repository
+# to puppet master.
+#
+# Source code: http://www.github.com/pdxcat/puppet-sync
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+require 'fileutils'
+require 'open3'
+require 'optparse'
+require 'ostruct'
+require 'socket'
+
+class PuppetSync
+
+  VERSION = "1.2-pdxcat2"
+  STAMP   = ".puppet-sync-stamp"
+
+  def initialize(arguments)
+    @arguments = arguments
+    @options   = OpenStruct.new
+    @options.deploy = '/etc/puppet/environments'
+
+    # Ensure nothing unexpected happens because of environment variables
+    ENV.delete('GIT_DIR')
+  end
+
+  def output lines, prefix = '| '
+    [lines].flatten.each do |record|
+      record.split("\n").each do |line|
+        puts prefix + line
+      end
+    end
+  end
+
+  def run
+    unless parsed_options? && arguments_valid?
+      abort "ERROR: invalid arguments given."
+    end
+    @options.environment = @options.branch if @options.environment.nil?
+
+    deploy = deploy_directory(@options.environment)
+    output "---------------------------------------------- PuppetSync ---", ".-"
+    output "Host        : #{Socket.gethostbyname(Socket.gethostname).first}"
+    output "Branch      : #{@options.branch}"
+    output "Deploy To   : #{deploy}" unless @options.delete
+    output "Delete From : #{deploy}" if @options.delete
+    output "Repository  : #{@options.repository}"
+
+    self.update(@options.branch, @options.environment, :delete => @options.delete)
+
+    output "-------------------------------------------------------------\n", "`-"
+  end
+
+  def update(branch, environment, opts={})
+    deploy = deploy_directory(environment)
+
+    if File.exists?(deploy) and not File.exists?("#{deploy}/#{STAMP}")
+      raise "ERROR: Environment directory is not managed by puppet-sync."
+    end
+
+    if opts[:delete]
+      FileUtils.remove_dir(deploy) if File.exists?(deploy)
+      output "Deleting: #{deploy}" if @options.verbose
+    else
+      unless File.directory?(deploy)
+        clone_output = git(:clone, @options.repository, deploy, '-b', branch)
+        if clone_output.match(/using HEAD instead$/)
+          FileUtils.remove_dir(deploy) if File.exists?(deploy)
+          output "Deleting: #{deploy}" if @options.verbose
+          raise "ERROR: unable to clone from branch #{branch}"
+        end
+      end
+
+      Dir.chdir(deploy) do
+        git(:fetch, 'origin')
+        git(:reset, '--hard')
+        git(:checkout, "origin/#{branch}")
+        git(:submodule, 'sync', @options.submodules)
+        git(:submodule, 'foreach --recursive "git checkout -f HEAD"')
+        git(:submodule, 'foreach --recursive "git clean -d -x -f"')
+        if @options.submodules
+          git(:submodule, 'update --init', @options.submodules)
+        else
+          git(:submodule, 'update --init --recursive')
+        end
+        git(:clean, '-d -x -f')
+        git(:"ls-files", '--other --exclude-standard').each do |path|
+          output "Recursively deleting untracked file(s) #{path.chomp}" if @options.verbose
+          FileUtils.remove_entry_secure(path.chomp)
+        end
+
+        output "Touch: #{STAMP}" if @options.verbose
+        FileUtils.touch(STAMP)
+      end
+    end
+  rescue => exception
+    output exception.message
+    output exception.backtrace if @options.verbose
+  end
+
+  def git(subcommand, *args)
+    @gitverbose ||= @options.verbose ? '' : '--quiet'
+    command = ["git #{subcommand.to_s} #{@gitverbose}", args].flatten.compact.join(' ')
+    case subcommand.to_sym
+    when :config, :"ls-files"
+      execute(command.sub(@gitverbose, ''))
+    else
+      execute(command)
+    end
+  end
+
+  def execute(command)
+    output "Executing: #{command}" if @options.verbose
+    result = {:stdout => [], :stderr => [], :all => []}
+    Open3.popen3(command) do |stdin, stdout, stderr|
+      result[:stdout] += stdout.readlines
+      result[:stderr] += stderr.readlines
+      result[:all] += result[:stdout] + result[:stderr]
+    end
+
+    if @options.verbose
+      output result[:all]
+    else
+      output result[:stderr]
+    end
+
+    return result[:all].join
+  end
+
+  def deploy_directory(branch)
+    return "#{@options.deploy}/#{branch}"
+  end
+
+  def parsed_options?
+    opts = OptionParser.new
+
+    opts.banner = "Usage: puppet-sync -b BRANCH [options]"
+
+    opts.on('-b', '--branch BRANCH', 'Mandatory, specify the git branch to clone.') do |branch|
+      @options.branch = branch
+    end
+
+    opts.on('-d', '--deploy DIR', 'Specify the directory to deploy to.') do |deploy|
+      @options.deploy = deploy
+    end
+
+    opts.on('-e', '--environment DIR', 'Specify the name of the environment to deploy to, defaults to the branch.') do |environment|
+      @options.environment = environment
+    end
+
+    opts.on('-D', '--delete', 'Remove the specified branch from the deployment directory.') do
+      @options.delete = true
+    end
+
+    opts.on('-r', '--repository URL', 'Git url for the repository.') do |repo|
+      @options.repository = repo
+    end
+
+    opts.on('-s', '--submodules-enabled SUBMODULES', 'Comma-seperated list of submodule paths to enable.') do |paths|
+      @options.submodules = paths.split(',').join(' ')
+    end
+
+    opts.separator "Common options:"
+    opts.on('-V', '--version', 'Display the script version.') { output_version ; exit 0; }
+    opts.on('-v', '--verbose', 'Be more verbose.') { @options.verbose = true }
+    opts.on_tail("-h", "--help", "Show this message") do
+      puts opts
+      exit
+    end
+
+    opts.parse!(@arguments) rescue return false
+    true
+  end
+
+  def arguments_valid?
+    case
+    when @options.branch.nil?
+      valid = false
+    else
+      valid = true
+    end
+  end
+
+  def output_version
+    puts VERSION
+  end
+
+end
+
+app = PuppetSync.new(ARGV)
+app.run
