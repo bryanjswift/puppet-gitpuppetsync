@@ -49,7 +49,6 @@ define gitpuppetsync::postreceive(
 
   file { "Puppet Environments":
     ensure => directory,
-    group  => $repository_user,
     mode   => 0755,
     owner  => $repository_user,
     path   => $environments_dir,
