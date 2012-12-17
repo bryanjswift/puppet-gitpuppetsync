@@ -28,4 +28,6 @@ do
 
   find $DEPLOY/$BRANCH -type d | grep -v '\.git' | xargs chmod 755
 
+  touch $DEPLOY/$BRANCH/manifests/site.pp
+
 done
