@@ -21,8 +21,12 @@
 #
 # Copyright 2012 Bryan J Swift
 #
-class gitpuppetsync {
+class gitpuppetsync(
+  $environments_dir = "/etc/puppet/environments",
+  $repository_user  = "git",
+) {
 
   include gitpuppetsync::install
+  include gitpuppetsync::environments
 
 }
