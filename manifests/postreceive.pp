@@ -34,6 +34,8 @@ define gitpuppetsync::postreceive(
 
   validate_absolute_path($repository_path)
 
+  $environments_dir = $gitpuppetsync::environments_dir
+
   file { "${repository_path}/hooks":
     ensure => directory,
     noop   => true,
